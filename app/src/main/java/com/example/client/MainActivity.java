@@ -3,7 +3,9 @@ package com.example.client;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.nfc.Tag;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.StrictMode;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -11,6 +13,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
@@ -23,6 +26,7 @@ import java.net.UnknownHostException;
 public class MainActivity extends AppCompatActivity {
 
     TextView connectText;
+    TextView sORgText, dataText;
     EditText ipEdit, portEdit, dataEdit;
     Button sendDataBTN, connectBTN;
     Socket socket;
@@ -38,6 +42,14 @@ public class MainActivity extends AppCompatActivity {
         dataEdit = (EditText) findViewById(R.id.dataEdit);
         sendDataBTN = (Button) findViewById(R.id.sendDataBTN);
         connectBTN = (Button) findViewById(R.id.connectBTN);
+        sORgText = (TextView) findViewById(R.id.sORgText);
+        dataText = (TextView) findViewById(R.id.dataText);
+
+        int SDK_INT = Build.VERSION.SDK_INT;
+        if(SDK_INT > 8) {
+            StrictMode.ThreadPolicy policy = new StrictMode.ThreadPolicy.Builder().permitAll().build();
+            StrictMode.setThreadPolicy(policy);
+        }
 
         connectBTN.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -94,12 +106,14 @@ public class MainActivity extends AppCompatActivity {
 
     // 아두이노 서버와 연결.
     class ConnectThread extends Thread {
+        String dataG;
         String ip;
         int port;
         public ConnectThread(String ip, int port) {
             this.ip = ip;
             this.port = port;
         }
+
         public void run() {
             try {
                 socket = new Socket(ip, port);
@@ -113,6 +127,7 @@ public class MainActivity extends AppCompatActivity {
                         Toast.makeText(getApplicationContext(), "Connected", Toast.LENGTH_SHORT).show();
                     }
                 });
+
             }
             // 오류 발생시.
             catch (UnknownHostException uhe) {
@@ -123,7 +138,7 @@ public class MainActivity extends AppCompatActivity {
                         connectText.setText("Error: 호스트의 IP 주소를 식별할 수 없음");
                     }
                 });
-            } catch (IOException e) {
+            } catch (IOException e) { // 소켓 생성 과정에서 I/O 에러 발생(주로 네트워크 응답 없음).
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
@@ -148,25 +163,67 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
             }
+
+
         }
     }
 
     // 서버 연결 후, 데이터 전송.
     class SendThread extends Thread {
         String data;
+        String dataG;
 
         public SendThread(String data) {
             this.data = data;
         }
+
+
+        public String byteArrayToHex(byte[] a) {
+            StringBuilder sb = new StringBuilder();
+            for(final byte b: a)
+                sb.append(String.format("%02x", b&0xff));
+            return sb.toString();
+        }
+
         public void run() {
-            try {
+            try { // 데이터 송신.
                 String outdata = data;
-                byte[] data = outdata.getBytes();
+                byte[] dataS= outdata.getBytes();
                 OutputStream output = socket.getOutputStream();
-                output.write(data);
+                output.write(dataS);
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        sORgText.setText("SEND");
+                        dataText.setText(data);
+                    }
+                });
             } catch (IOException e) {
                 e.printStackTrace();
             }
+
+            try { // 데이터 수신.
+                while (true) {
+                    byte[] buffer = new byte[1024];
+                    InputStream input = socket.getInputStream();
+                    int bytes = input.read(buffer);
+
+                    String dataG = new String(buffer, 0, bytes);
+
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            sORgText.setText("GET");
+                            dataText.setText(dataG);
+                        }
+                    });
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+
         }
     }
 }
